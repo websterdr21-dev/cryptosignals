@@ -1,0 +1,17 @@
+[Unit]
+Description=BTC/USDT Price Action Signal Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=opc
+WorkingDirectory=/home/opc/btc-signal-bot
+ExecStart=/usr/bin/python3.11 /home/opc/btc-signal-bot/bot.py
+Restart=always
+RestartSec=30
+Environment="TELEGRAM_BOT_TOKEN=your_token_here"
+Environment="TELEGRAM_CHAT_ID=your_chat_id_here"
+
+[Install]
+WantedBy=multi-user.target
