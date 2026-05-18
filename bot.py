@@ -13,7 +13,6 @@ from dotenv import load_dotenv
 
 from strategies.breakout import Signal, get_quality_tier
 from config.btc import BTC_STRATEGY
-from config.sol import SOL_STRATEGY
 
 load_dotenv()
 
@@ -26,7 +25,7 @@ log = logging.getLogger(__name__)
 
 # ── Active strategies ─────────────────────────────────────────────────────────
 
-ACTIVE_STRATEGIES = [BTC_STRATEGY, SOL_STRATEGY]
+ACTIVE_STRATEGIES = [BTC_STRATEGY]
 
 # ── Retest entry config (matches validated backtest parameters) ───────────────
 
