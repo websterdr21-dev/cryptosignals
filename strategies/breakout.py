@@ -50,6 +50,7 @@ class BreakoutStrategy:
         cooldown_hours: int = 3,
         candles: int = 350,
         min_rr: float = 0.0,
+        max_rr: float = None,
     ):
         self.symbol = symbol
         self.swing_lookback = swing_lookback
@@ -64,6 +65,7 @@ class BreakoutStrategy:
         self.cooldown_hours = cooldown_hours
         self.candles = candles
         self.min_rr = min_rr
+        self.max_rr = max_rr
 
     # ── Internal signal logic (same algorithms as original bot.py, parameterized) ──
 
@@ -216,7 +218,16 @@ class BreakoutStrategy:
         risk   = abs(entry - sl)
         if risk == 0:
             return None
-        rr       = reward / risk
+        rr = reward / risk
+
+        # Cap TP so RR doesn't exceed max_rr (moves TP closer, not an SR level)
+        if self.max_rr is not None and rr > self.max_rr:
+            if direction == "BUY":
+                tp = entry + risk * self.max_rr
+            else:
+                tp = entry - risk * self.max_rr
+            rr = self.max_rr
+
         risk_pct = risk / entry * 100
         return {"tp": tp, "sl": sl, "rr": rr, "risk_pct": risk_pct}
 
