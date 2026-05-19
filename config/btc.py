@@ -13,4 +13,8 @@ BTC_STRATEGY = BreakoutStrategy(
     trend_swing_count         = 3,
     cooldown_hours            = 3,
     candles                   = 350,
+    # Run C config: ATR stop + TP distance filter
+    atr_stop_multiplier       = 1.5,
+    atr_period                = 14,
+    min_tp_distance_pct       = 0.015,
 )

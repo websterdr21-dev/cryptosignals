@@ -51,6 +51,9 @@ class BreakoutStrategy:
         candles: int = 350,
         min_rr: float = 0.0,
         max_rr: float = None,
+        atr_stop_multiplier: float = None,
+        atr_period: int = 14,
+        min_tp_distance_pct: float = None,
     ):
         self.symbol = symbol
         self.swing_lookback = swing_lookback
@@ -66,6 +69,9 @@ class BreakoutStrategy:
         self.candles = candles
         self.min_rr = min_rr
         self.max_rr = max_rr
+        self.atr_stop_multiplier = atr_stop_multiplier
+        self.atr_period = atr_period
+        self.min_tp_distance_pct = min_tp_distance_pct
 
     # ── Internal signal logic (same algorithms as original bot.py, parameterized) ──
 
@@ -265,6 +271,42 @@ class BreakoutStrategy:
         if not tp_sl:
             return None
 
+        tp = tp_sl["tp"]
+        sl = tp_sl["sl"]
+
+        # ATR-based stop (Run C config)
+        if self.atr_stop_multiplier is not None:
+            n = len(df_1h)
+            if n < self.atr_period + 2:
+                return None
+            trs = []
+            for j in range(n - self.atr_period - 1, n - 1):
+                h  = float(df_1h["high"].iloc[j])
+                lo = float(df_1h["low"].iloc[j])
+                pc = float(df_1h["close"].iloc[j - 1])
+                trs.append(max(h - lo, abs(h - pc), abs(lo - pc)))
+            atr = sum(trs) / len(trs)
+            sr_lvl = breakout["level"]
+            if direction == "BUY":
+                sl = sr_lvl - atr * self.atr_stop_multiplier
+                if sl >= entry:
+                    return None
+            else:
+                sl = sr_lvl + atr * self.atr_stop_multiplier
+                if sl <= entry:
+                    return None
+
+        risk = abs(entry - sl)
+        if risk == 0:
+            return None
+        rr       = abs(tp - entry) / risk
+        risk_pct = risk / entry * 100
+
+        # TP distance filter (Run C config)
+        if self.min_tp_distance_pct is not None:
+            if abs(tp - entry) / entry < self.min_tp_distance_pct:
+                return None
+
         timestamp = df_1h["open_time"].iloc[-1]
         if hasattr(timestamp, 'to_pydatetime'):
             timestamp = timestamp.to_pydatetime()
@@ -273,14 +315,14 @@ class BreakoutStrategy:
             symbol       = self.symbol,
             direction    = direction,
             entry        = entry,
-            tp           = tp_sl["tp"],
-            sl           = tp_sl["sl"],
-            rr           = tp_sl["rr"],
-            risk_pct     = tp_sl["risk_pct"],
+            tp           = tp,
+            sl           = sl,
+            rr           = rr,
+            risk_pct     = risk_pct,
             sr_level     = breakout["level"],
             sr_touches   = breakout["level_touches"],
             volume_ratio = volume_ratio,
             trend        = trend,
-            quality_tier = get_quality_tier(tp_sl["rr"]),
+            quality_tier = get_quality_tier(rr),
             timestamp    = timestamp,
         )
