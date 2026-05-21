@@ -193,12 +193,14 @@ class BreakoutStrategy:
     def _calculate_tp_sl(self, direction: str, entry: float, sr: dict, df: pd.DataFrame) -> Optional[dict]:
         highs, lows = self._detect_swings(df)
         too_close = self.sl_fallback_threshold_pct
+        broken_level = None  # broken SR level — ATR SL anchor
 
         if direction == "BUY":
             broken_levels = [r["price"] for r in sr["resistance"] if r["price"] <= entry]
             use_fallback = True
             if broken_levels:
                 broken = max(broken_levels)
+                broken_level = broken
                 if abs(entry - broken) / entry > too_close:
                     sl = broken * (1 - self.sl_buffer_pct)
                     use_fallback = False
@@ -215,6 +217,7 @@ class BreakoutStrategy:
             use_fallback = True
             if broken_levels:
                 broken = min(broken_levels)
+                broken_level = broken
                 if abs(broken - entry) / entry > too_close:
                     sl = broken * (1 + self.sl_buffer_pct)
                     use_fallback = False
@@ -226,12 +229,14 @@ class BreakoutStrategy:
             candidates = [s["price"] for s in sr["support"] if s["price"] < entry]
             tp = max(candidates) if candidates else entry - 2 * abs(sl - entry)
 
-        # ATR stop — primary SL when atr_stop_multiplier is set; entry-anchored
+        # ATR stop — SR-level anchored, matches backtest_multi_config.py exactly
+        # sl = broken_sr_level +/- ATR(14) x atr_stop_multiplier
         if self.atr_stop_multiplier is not None:
             atr = self._calc_atr(df)
             if atr is not None:
-                sl = (entry - atr * self.atr_stop_multiplier if direction == "BUY"
-                      else entry + atr * self.atr_stop_multiplier)
+                anchor = broken_level if broken_level is not None else entry
+                sl = (anchor - atr * self.atr_stop_multiplier if direction == "BUY"
+                      else anchor + atr * self.atr_stop_multiplier)
 
         # Reject inverted SL (SL on wrong side of entry = strategy edge case bug)
         if direction == "BUY" and sl >= entry:
