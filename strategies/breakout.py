@@ -178,6 +178,18 @@ class BreakoutStrategy:
                 return {"direction": "SELL", "level": lvl, "level_touches": level_info["touches"]}
         return None
 
+    def _calc_atr(self, df: pd.DataFrame) -> Optional[float]:
+        period = self.atr_period
+        if len(df) < period + 2:
+            return None
+        trs = []
+        for i in range(len(df) - period - 1, len(df) - 1):
+            h  = float(df["high"].iloc[i])
+            lo = float(df["low"].iloc[i])
+            pc = float(df["close"].iloc[i - 1])
+            trs.append(max(h - lo, abs(h - pc), abs(lo - pc)))
+        return sum(trs) / len(trs)
+
     def _calculate_tp_sl(self, direction: str, entry: float, sr: dict, df: pd.DataFrame) -> Optional[dict]:
         highs, lows = self._detect_swings(df)
         too_close = self.sl_fallback_threshold_pct
@@ -213,6 +225,13 @@ class BreakoutStrategy:
                     return None
             candidates = [s["price"] for s in sr["support"] if s["price"] < entry]
             tp = max(candidates) if candidates else entry - 2 * abs(sl - entry)
+
+        # ATR stop — primary SL when atr_stop_multiplier is set; entry-anchored
+        if self.atr_stop_multiplier is not None:
+            atr = self._calc_atr(df)
+            if atr is not None:
+                sl = (entry - atr * self.atr_stop_multiplier if direction == "BUY"
+                      else entry + atr * self.atr_stop_multiplier)
 
         # Reject inverted SL (SL on wrong side of entry = strategy edge case bug)
         if direction == "BUY" and sl >= entry:
@@ -273,39 +292,8 @@ class BreakoutStrategy:
 
         tp = tp_sl["tp"]
         sl = tp_sl["sl"]
-
-        # ATR-based stop (Run C config)
-        if self.atr_stop_multiplier is not None:
-            n = len(df_1h)
-            if n < self.atr_period + 2:
-                return None
-            trs = []
-            for j in range(n - self.atr_period - 1, n - 1):
-                h  = float(df_1h["high"].iloc[j])
-                lo = float(df_1h["low"].iloc[j])
-                pc = float(df_1h["close"].iloc[j - 1])
-                trs.append(max(h - lo, abs(h - pc), abs(lo - pc)))
-            atr = sum(trs) / len(trs)
-            sr_lvl = breakout["level"]
-            if direction == "BUY":
-                sl = sr_lvl - atr * self.atr_stop_multiplier
-                if sl >= entry:
-                    return None
-            else:
-                sl = sr_lvl + atr * self.atr_stop_multiplier
-                if sl <= entry:
-                    return None
-
-        risk = abs(entry - sl)
-        if risk == 0:
-            return None
-        rr       = abs(tp - entry) / risk
-        risk_pct = risk / entry * 100
-
-        # TP distance filter (Run C config)
-        if self.min_tp_distance_pct is not None:
-            if abs(tp - entry) / entry < self.min_tp_distance_pct:
-                return None
+        rr       = tp_sl["rr"]
+        risk_pct = tp_sl["risk_pct"]
 
         timestamp = df_1h["open_time"].iloc[-1]
         if hasattr(timestamp, 'to_pydatetime'):
