@@ -10,6 +10,8 @@ from tqdm import tqdm
 
 from strategies.breakout import BreakoutStrategy, get_quality_tier
 from config.btc import BTC_STRATEGY
+from config.btc_ema import BTC_EMA_STRATEGY
+from config.eth import ETH_STRATEGY
 from config.sol import SOL_STRATEGY
 
 WARMUP_CANDLES = 150
@@ -45,8 +47,10 @@ def calculate_atr_at(df: pd.DataFrame, idx: int, period: int = ATR_PERIOD) -> fl
     return sum(tr_values) / len(tr_values)
 
 STRATEGIES = {
-    "BTC-USDT": BTC_STRATEGY,
-    "SOL-USDT": SOL_STRATEGY,
+    "BTC-USDT":     BTC_STRATEGY,
+    "BTC-USDT-EMA": BTC_EMA_STRATEGY,
+    "ETH-USDT":     ETH_STRATEGY,
+    "SOL-USDT":     SOL_STRATEGY,
 }
 
 REST_BASE_URL = "https://openapi.blofin.com"
@@ -339,6 +343,39 @@ def run_backtest(strategy: BreakoutStrategy, df_1h: pd.DataFrame, df_4h: pd.Data
             candles_waited = 0
             entry_idx    = i
 
+        # ATR stop override — mirrors evaluate() live bot logic
+        if strategy.atr_stop_multiplier is not None:
+            n_w = len(window_1h)
+            if n_w < strategy.atr_period + 2:
+                continue
+            trs = []
+            for j in range(n_w - strategy.atr_period - 1, n_w - 1):
+                h  = float(window_1h["high"].iloc[j])
+                lo = float(window_1h["low"].iloc[j])
+                pc = float(window_1h["close"].iloc[j - 1])
+                trs.append(max(h - lo, abs(h - pc), abs(lo - pc)))
+            atr_val = sum(trs) / len(trs)
+            sr_lvl  = breakout["level"]
+            if direction == "BUY":
+                atr_sl = sr_lvl - atr_val * strategy.atr_stop_multiplier
+                if atr_sl >= entry:
+                    continue
+            else:
+                atr_sl = sr_lvl + atr_val * strategy.atr_stop_multiplier
+                if atr_sl <= entry:
+                    continue
+            sl       = atr_sl
+            risk     = abs(entry - sl)
+            if risk == 0:
+                continue
+            rr       = abs(tp - entry) / risk
+            risk_pct = risk / entry * 100
+
+        # TP distance filter — mirrors evaluate() live bot logic
+        if strategy.min_tp_distance_pct is not None:
+            if abs(tp - entry) / entry < strategy.min_tp_distance_pct:
+                continue
+
         from_index = entry_idx + 1
         trail_atr  = calculate_atr_at(df_1h, entry_idx) if trail_multiplier else None
         result = simulate_trade(
@@ -509,7 +546,7 @@ def main():
     parser.add_argument("--start",  default=two_years_ago)
     parser.add_argument("--end",    default=yesterday)
     parser.add_argument("--output", default=None)
-    parser.add_argument("--symbol", default="BTC-USDT", choices=list(STRATEGIES.keys()),
+    parser.add_argument("--symbol", default="BTC-USDT-EMA", choices=list(STRATEGIES.keys()),
                         help="Asset to backtest")
     args = parser.parse_args()
 
