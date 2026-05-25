@@ -20,9 +20,22 @@ Currently **live on BTC-USDT** (validated). ETH-USDT research in progress.
 
 ---
 
+## Fee Model
+
+All results are fee-adjusted on notional using BloFin's actual fee structure:
+
+| Exit type | Entry | Exit | Round-trip |
+|---|---|---|---|
+| Win (TP limit hit) | 0.02% maker | 0.02% maker | **0.04%** |
+| Loss (SL market hit) | 0.02% maker | 0.06% taker | **0.08%** |
+
+Fee drag is tracked per-trade as `fee_as_%_of_risk` — this metric drives every ATR multiplier and deployment decision. Wider ATR stop = larger risk distance = lower fee-to-risk ratio = more survivable edge.
+
+---
+
 ## Validated Results — BTC-USDT (ATR ×1.50)
 
-Scenario B: R5,000 start, 2% risk per trade, compounding, 0% slippage.
+Scenario B: R5,000 start, 2% risk per trade, compounding, 0% slippage. **All numbers fee-adjusted.**
 
 | Metric | Value |
 |---|---|
@@ -44,12 +57,12 @@ ATR surface sweep confirmed optimal multiplier at ×2.00. Retest fill rate 77.3%
 |---|---|---|
 | Fill rate | 77.3% | 78.8% |
 | Win rate | 69.0% | 64.6% |
-| Expectancy | +0.014R | +0.166R |
+| Expectancy | +0.014R (fee-adj) | +0.166R (fee-adj) |
 | Ending equity | R4,259 | R12,554 |
 | Annualized % | -6.5% | +47.2% |
 | Max drawdown | 29.4% | 27.8% |
 
-**Root cause:** 92.5% of ETH trades fall in Low tier (<1.5R RR). Avg win +0.47R — fees consume the edge. High/Standard tier signals (n=36) show genuine edge (+0.368R / +0.151R expectancy). Next step: apply `min_rr=1.5` filter.
+**Root cause:** 92.5% of ETH trades fall in Low tier (<1.5R RR). Avg win +0.47R — fee round-trip (0.04–0.08% on notional) consumes the margin at small risk distances. Fee-as-%-of-risk analysis shows ETH's tight stops make fees structurally too expensive relative to reward. High/Standard tier signals (n=36) show genuine edge (+0.368R / +0.151R expectancy) — sufficient RR offsets fee drag. Next step: apply `min_rr=1.5` filter to isolate those trades.
 
 ---
 
@@ -124,10 +137,11 @@ python backtest_eth_atr_sweep.py
 python backtest_eth_retest.py
 ```
 
-Minimum deployment thresholds:
-- Expectancy >= +0.10R
+Minimum deployment thresholds (all metrics fee-adjusted):
+- Expectancy >= +0.10R after fees
 - Max drawdown <= 35%
-- Avg win > 1R
+- Avg win > 1R (ensures fee drag doesn't erase edge at realistic RR)
+- Fee-as-%-of-risk < 15% average across trades
 - Positive expectancy in both train (2024–2025) and test (2026+) periods
 
 ---
