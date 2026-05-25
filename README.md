@@ -215,7 +215,7 @@ sudo systemctl restart btc-signal-bot
 - [x] ETH ATR surface sweep — optimal ×2.00
 - [x] ETH fill rate analysis — 77.3%, comparable to BTC
 - [x] ETH retest backtest — NOT READY (avg win +0.47R, fees eat edge)
-- [ ] ETH min_rr=1.5 filter — isolate high/standard tier signals (next step)
+- [x] Multi-asset baseline (XRP, BNB, AVAX) — all NO-GO, same fee drag root cause
 - [ ] BTC + ETH portfolio correlation analysis
 
 ---
