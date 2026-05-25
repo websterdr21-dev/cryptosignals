@@ -496,7 +496,7 @@ def main():
 
     # Save trades CSV
     if trades:
-        csv_path = "results_eth_retest.csv"
+        csv_path = "results/eth/results_eth_retest.csv"
         pd.DataFrame(trades).to_csv(csv_path, index=False)
         print(f"\n  Trade log saved to: {csv_path}")
 
