@@ -9,6 +9,7 @@ Single walk-forward pass. Every signal that passes baseline filters is
 simulated regardless of the forming-4H verdict, so we can cross-check
 whether the filter is blocking the right trades.
 """
+from __future__ import annotations
 
 import argparse
 from datetime import datetime, timedelta, timezone

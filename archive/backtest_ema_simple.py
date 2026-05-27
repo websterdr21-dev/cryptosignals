@@ -3,6 +3,7 @@ EMA crossover backtest with optional 4H trend filter.
 Runs 8 combinations on train (2023-2024) then test (2025-today).
 Prints side-by-side comparison table; saves CSVs per period.
 """
+from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path

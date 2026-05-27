@@ -2,6 +2,7 @@
 TPO dwell-block breakout backtest.
 6 configs on 1H BTC data, train/test split, vs touch-based baseline.
 """
+from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
