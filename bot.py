@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import requests
@@ -98,9 +98,53 @@ def cooldown_active(state: dict, cooldown_hours: int) -> bool:
     return elapsed_hrs < cooldown_hours
 
 
+# ── Forming 4H candle filter ──────────────────────────────────────────────────
+
+def apply_forming_4h_filter(
+    df_1h: pd.DataFrame,
+    signal: Signal,
+) -> tuple[str, float | None, float | None]:
+    """
+    Returns (result, window_open_price, current_close).
+    result: "passed" | "blocked" | "skipped"
+
+    "skipped" when signal fires at the exact 4H window open — no closed 1H candle
+    exists inside the window yet, so there is nothing to compare against.
+    """
+    signal_dt         = signal.timestamp + timedelta(hours=1)
+    signal_hour       = signal_dt.hour
+    window_start_hour = (signal_hour // 4) * 4
+    window_start_dt   = signal_dt.replace(hour=window_start_hour, minute=0, second=0, microsecond=0)
+
+    if signal_dt == window_start_dt:
+        return "skipped", None, None
+
+    window_mask = df_1h["open_time"] == window_start_dt
+    if not window_mask.any():
+        log.warning(
+            "Forming 4H: window candle at %s not in df_1h — passing signal through",
+            window_start_dt,
+        )
+        return "skipped", None, None
+
+    window_open_price = float(df_1h.loc[window_mask, "open"].iloc[0])
+    current_close     = float(df_1h["close"].iloc[-1])
+
+    blocked = (
+        (signal.direction == "BUY"  and current_close < window_open_price) or
+        (signal.direction == "SELL" and current_close > window_open_price)
+    )
+    return ("blocked" if blocked else "passed"), window_open_price, current_close
+
+
 # ── Telegram ──────────────────────────────────────────────────────────────────
 
-def format_signal_message(signal: Signal) -> str:
+def format_signal_message(
+    signal: Signal,
+    filter_result: str,
+    qty_per_100: float,
+    margin_per_100: float,
+) -> str:
     tier    = signal.quality_tier
     emoji   = "🟢" if signal.direction == "BUY" else "🔴"
     label   = "LONG" if signal.direction == "BUY" else "SHORT"
@@ -121,6 +165,13 @@ def format_signal_message(signal: Signal) -> str:
         quality_line = f"Quality:      {tier['stars']}  {tier['label']}"
         sizing_line  = f"Sizing:       {tier['guidance']}"
 
+    if filter_result == "skipped":
+        forming_4h_text = "N/A (signal at 4H window open)"
+    elif signal.direction == "BUY":
+        forming_4h_text = "Bullish ✓"
+    else:
+        forming_4h_text = "Bearish ✓"
+
     return (
         f"{emoji} <b>{label} SIGNAL - {signal.symbol}</b>\n"
         f"\n"
@@ -129,10 +180,17 @@ def format_signal_message(signal: Signal) -> str:
         f"<b>Stop Loss:</b>    ${signal.sl:,.2f}\n"
         f"<b>Risk/Reward:</b>  1:{rr:.1f}\n"
         f"<b>Risk:</b>         {risk_pct:.2f}%\n"
+        f"\n"
+        f"<b>Sizing (per $100 | 2% risk | 10X):</b>\n"
+        f"  Qty:    {qty_per_100:.4f} BTC\n"
+        f"  Margin: ~${margin_per_100:.0f}\n"
+        f"  → Scale by account ÷ 100\n"
+        f"\n"
         f"<b>Expires:</b>      5 candles (~5H) — cancel if unfilled\n"
         f"\n"
         f"<b>Timeframe:</b>    1H\n"
         f"<b>4H Trend:</b>     {trend_s}\n"
+        f"<b>Forming 4H:</b>   {forming_4h_text}\n"
         f"<b>S/R Level:</b>    ${signal.sr_level:,.0f} ({signal.sr_touches} touches)\n"
         f"<b>Volume:</b>       Confirmed ({signal.volume_ratio:.1f}x avg)\n"
         f"\n"
@@ -181,11 +239,36 @@ def on_candle_close(
         log.info("[%s] Cooldown active — skipping", signal.symbol)
         return state
 
-    msg = format_signal_message(signal)
-    now_iso = datetime.now(timezone.utc).isoformat()
-    send_telegram(msg)
+    # Forming 4H candle filter
+    filter_result, window_open, current_close = apply_forming_4h_filter(df_1h, signal)
+    log.info(
+        "[%s] Forming 4H: direction=%s result=%s window_open=%s current_close=%s",
+        signal.symbol, signal.direction, filter_result,
+        f"{window_open:.2f}" if window_open is not None else "N/A",
+        f"{current_close:.2f}" if current_close is not None else "N/A",
+    )
+
+    # Per-$100 position sizing (2% risk, 10X leverage)
+    entry_limit  = signal.sr_level
+    risk_per_btc = abs(entry_limit - signal.sl)
+    qty_per_100    = (100 * 0.02) / risk_per_btc if risk_per_btc > 0 else 0.0
+    margin_per_100 = (qty_per_100 * entry_limit) / 10
+    log.info(
+        "[%s] Sizing: entry_limit=%.2f risk_per_btc=%.2f qty_per_100=%.4f margin_per_100=$%.0f",
+        signal.symbol, entry_limit, risk_per_btc, qty_per_100, margin_per_100,
+    )
+
+    now_iso   = datetime.now(timezone.utc).isoformat()
+    new_state = {"last_direction": signal.direction, "last_signal_time": now_iso}
     save_state(signal.symbol, signal.direction, now_iso)
-    return {"last_direction": signal.direction, "last_signal_time": now_iso}
+
+    if filter_result == "blocked":
+        log.info("[%s] Signal BLOCKED by forming 4H filter — no Telegram sent", signal.symbol)
+        return new_state
+
+    msg = format_signal_message(signal, filter_result, qty_per_100, margin_per_100)
+    send_telegram(msg)
+    return new_state
 
 
 # ── WebSocket loop ────────────────────────────────────────────────────────────
