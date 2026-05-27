@@ -202,6 +202,64 @@ def format_signal_message(
         f"{now_utc}"
     )
 
+def post_signal_to_sheets(signal: Signal, filter_result: str) -> None:
+    webhook_url = os.environ.get("GOOGLE_SHEETS_WEBHOOK_URL", "")
+    if not webhook_url:
+        return
+
+    now_utc    = datetime.now(timezone.utc)
+    expiry_utc = now_utc + timedelta(hours=5)
+
+    sr         = signal.sr_level
+    risk       = abs(sr - signal.sl)
+    reward     = abs(signal.tp - sr)
+    rr         = round(reward / risk, 2) if risk > 0 else 0.0
+
+    if filter_result == "skipped":
+        forming_4h = "N/A (signal at 4H window open)"
+    elif signal.direction == "BUY":
+        forming_4h = "Bullish ✓"
+    else:
+        forming_4h = "Bearish ✓"
+
+    payload = {
+        "signal_time": now_utc.strftime("%Y-%m-%d %H:%M:%S"),
+        "direction":   "LONG" if signal.direction == "BUY" else "SHORT",
+        "signal_entry": sr,
+        "tp":          signal.tp,
+        "sl":          signal.sl,
+        "rr":          rr,
+        "tier":        signal.quality_tier["stars"],
+        "sr_level":    sr,
+        "trend_4h":    "Bullish (HH/HL)" if signal.trend == "uptrend" else "Bearish (LH/LL)",
+        "forming_4h":  forming_4h,
+        "volume":      f"Confirmed ({signal.volume_ratio:.1f}x avg)",
+        "expiry":      expiry_utc.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+    log.info("Posting signal to Google Sheets webhook")
+    try:
+        r = requests.post(
+            webhook_url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            try:
+                body = r.json()
+            except Exception:
+                body = {}
+            if body.get("status") == "success":
+                log.info("Signal logged to Google Sheets")
+            else:
+                log.warning("Failed to log signal to Google Sheets: unexpected response: %s", r.text[:200])
+        else:
+            log.warning("Failed to log signal to Google Sheets: HTTP %d — %s", r.status_code, r.text[:200])
+    except Exception as exc:
+        log.warning("Failed to log signal to Google Sheets: %s", exc)
+
+
 def send_telegram(message: str) -> bool:
     token   = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
@@ -270,6 +328,7 @@ def on_candle_close(
 
     msg = format_signal_message(signal, filter_result, qty_per_100, margin_per_100)
     send_telegram(msg)
+    post_signal_to_sheets(signal, filter_result)
     return new_state
 
 
