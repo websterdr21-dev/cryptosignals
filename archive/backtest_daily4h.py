@@ -3,6 +3,7 @@ BTC/USDT Daily Trend + 4H Entry Backtest
 Trend detection: Daily HH/HL vs LH/LL
 Entry signals:  4H S/R breakouts with volume confirmation
 """
+from __future__ import annotations
 
 import sys
 import time

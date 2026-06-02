@@ -2,6 +2,7 @@
 RSI mean reversion backtest.
 4 configs x train/test split. Prints comparison table; saves CSVs.
 """
+from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path

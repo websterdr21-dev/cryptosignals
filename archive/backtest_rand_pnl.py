@@ -7,6 +7,7 @@ Entry:       retest only (strict 5-candle window, no fallback)
 Fees:        0.12% round-trip on notional
 ZAR/USD:     historical daily rates from frankfurter.app
 """
+from __future__ import annotations
 
 import sys
 import time
